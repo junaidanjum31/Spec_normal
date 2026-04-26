@@ -7,68 +7,90 @@ from scipy.signal import find_peaks, savgol_filter
 st.set_page_config(page_title="Spectrum Normalizer Pro", layout="wide")
 
 st.title("📊 Spectrum Normalizer Pro")
-st.markdown("**Multi-column files • Stacking • Reference Normalization**")
+st.markdown("**Interactive Peak Picker • Reference Spectrum Picker**")
 
 # ====================== SIDEBAR ======================
 with st.sidebar:
     st.header("📁 Upload Data")
-    uploaded_files = st.file_uploader(
-        "Upload CSV or Excel files (multi-column supported)",
-        type=["csv", "xlsx", "xls"],
-        accept_multiple_files=True
-    )
+    uploaded_files = st.file_uploader("Upload CSV/Excel files", 
+                                    type=["csv", "xlsx", "xls"], 
+                                    accept_multiple_files=True)
 
-    spectra_type = st.selectbox("Spectra Type", 
-        ["XPS", "Raman", "FTIR", "UV-Vis", "XRD", "Others"])
+    spectra_type = st.selectbox("Spectra Type", ["XPS", "Raman", "FTIR", "UV-Vis", "XRD", "Others"])
 
     normalization_mode = st.radio("Normalization Mode", 
                                 ["Stack & Normalize Together", "Individual Normalization"])
 
     baseline_mode = st.radio("Baseline Correction", ["Auto (Minimum)", "Fixed Value"])
     if baseline_mode == "Fixed Value":
-        manual_baseline = st.number_input("Fixed Baseline Value", value=0.0)
+        manual_baseline = st.number_input("Fixed Baseline", value=0.0)
 
     smooth = st.checkbox("Savitzky-Golay Smoothing", False)
     if smooth:
         window = st.slider("Window Length", 5, 51, 11, step=2)
         poly = st.slider("Polynomial Order", 1, 5, 2)
 
-    detect_peaks = st.checkbox("Enable Peak Detection", True)
-
-# ====================== LOAD MULTI-COLUMN DATA ======================
-data_dict = {}  # key = "filename - ColumnName"
+# ====================== LOAD DATA ======================
+data_dict = {}
 
 if uploaded_files:
     for file in uploaded_files:
         try:
-            if file.name.endswith('.csv'):
-                df = pd.read_csv(file)
-            else:
-                df = pd.read_excel(file)
-            
+            df = pd.read_csv(file) if file.name.endswith('.csv') else pd.read_excel(file)
             numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-            if len(numeric_cols) < 2:
-                continue
+            if len(numeric_cols) < 2: continue
 
             x_col = numeric_cols[0]
-            y_cols = numeric_cols[1:]
+            for y_col in numeric_cols[1:]:
+                name = f"{file.name} - {y_col}"
+                temp = df[[x_col, y_col]].dropna().copy()
+                temp.columns = ['x', 'y']
+                data_dict[name] = temp
+        except:
+            pass
 
-            for y_col in y_cols:
-                plot_name = f"{file.name} - {y_col}"
-                temp_df = df[[x_col, y_col]].dropna().copy()
-                temp_df.columns = ['x', 'y']
-                data_dict[plot_name] = temp_df
-        except Exception as e:
-            st.error(f"Error with {file.name}: {e}")
-
-# ====================== REFERENCE SELECTION (NOW MORE RELIABLE) ======================
+# ====================== INTERACTIVE REFERENCE SELECTION ======================
 ref_plot = None
-if normalization_mode == "Stack & Normalize Together" and len(data_dict) > 1:
-    ref_plot = st.selectbox(
-        "🔑 Select Reference Plot/Column (its max will normalize all others)",
-        list(data_dict.keys()),
-        index=0
-    )
+ref_value = None
+
+if normalization_mode == "Stack & Normalize Together" and data_dict:
+    col1, col2 = st.columns(2)
+    with col1:
+        ref_plot = st.selectbox("Select Reference Spectrum", list(data_dict.keys()))
+    
+    with col2:
+        ref_method = st.radio("Reference Method", 
+                            ["Global Max", "Pick Peak on Plot", "Manual Value"])
+
+    if ref_method == "Manual Value":
+        ref_value = st.number_input("Enter Reference Value", value=1.0)
+
+    elif ref_method == "Pick Peak on Plot":
+        if st.button("📍 Pick Reference Peak (Click on Plot)"):
+            st.session_state.pick_mode = True
+        else:
+            st.info("Click the button above, then click on any peak in the plot")
+
+# Show plot for picking
+if 'pick_mode' in st.session_state and st.session_state.pick_mode:
+    st.header("Click on a Peak in the Plot")
+    ref_df = data_dict[ref_plot]
+    fig_pick = go.Figure()
+    fig_pick.add_trace(go.Scatter(x=ref_df['x'], y=ref_df['y'], mode='lines', name=ref_plot))
+    fig_pick.update_layout(height=500, title="Click on desired peak")
+    
+    clicked = st.plotly_chart(fig_pick, use_container_width=True, key="peak_picker")
+    
+    if clicked and 'points' in clicked:
+        try:
+            x_clicked = clicked['points'][0]['x']
+            # Find closest point
+            idx = np.argmin(np.abs(ref_df['x'] - x_clicked))
+            ref_value = ref_df['y'].iloc[idx]
+            st.success(f"Selected Peak at X = {x_clicked:.4f} | Intensity = {ref_value:.4f}")
+            st.session_state.pick_mode = False
+        except:
+            pass
 
 # ====================== PROCESSING ======================
 if data_dict:
@@ -84,44 +106,40 @@ if data_dict:
         if smooth and len(y_base) > window:
             y_base = savgol_filter(y_base, window, poly)
 
-        max_val = y_base.max() or 1.0
-
         # Normalization
-        if ref_plot:
-            ref_y = data_dict[ref_plot]['y'].values
-            ref_baseline = ref_y.min() if baseline_mode == "Auto (Minimum)" else manual_baseline
-            ref_max = np.max(ref_y - ref_baseline) or 1.0
-            y_norm = y_base / ref_max
+        if normalization_mode == "Individual Normalization":
+            norm_factor = y_base.max() or 1.0
         else:
-            y_norm = y_base / max_val
+            if ref_method == "Global Max":
+                ref_y = data_dict[ref_plot]['y'].values
+                norm_factor = (ref_y.max() - (ref_y.min() if baseline_mode == "Auto (Minimum)" else manual_baseline))
+            else:
+                norm_factor = ref_value or y_base.max() or 1.0
 
+        y_norm = y_base / norm_factor if norm_factor > 0 else y_base
         normalized_data[name] = pd.DataFrame({'x': x, 'y_normalized': y_norm})
 
-    # ====================== PLOT ======================
-    st.header("📈 Stacked Normalized Spectra")
-
+    # ====================== FINAL PLOT ======================
+    st.header("Normalized Stacked Spectra")
     fig = go.Figure()
-    colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b']
+    colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd']
 
     for i, (name, dfn) in enumerate(normalized_data.items()):
-        fig.add_trace(go.Scatter(
-            x=dfn['x'], 
-            y=dfn['y_normalized'],
-            mode='lines',
-            name=name,
-            line=dict(color=colors[i % len(colors)], width=2.5)
-        ))
+        fig.add_trace(go.Scatter(x=dfn['x'], y=dfn['y_normalized'],
+                               mode='lines', name=name,
+                               line=dict(color=colors[i % len(colors)], width=2.5)))
 
     fig.update_layout(
         title=f"Normalized {spectra_type} Spectra",
         xaxis_title="X Axis",
         yaxis_title="Normalized Intensity (0 - 1)",
         hovermode="x unified",
-        height=700,
+        height=650,
         legend=dict(orientation="h", y=1.02)
     )
 
     st.plotly_chart(fig, use_container_width=True)
 
 else:
-    st.info("👆 Upload your file to see all columns as separate plots")
+    st.info("Upload files to start")
+    
