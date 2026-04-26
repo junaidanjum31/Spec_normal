@@ -10,11 +10,6 @@ st.set_page_config(page_title="Spectrum Normalizer Pro", layout="wide")
 st.title("📊 Spectrum Normalizer Pro")
 st.markdown("**Click directly on the plot to select reference peak**")
 
-# ====================== CONSTANTS ======================
-AUTO_MODE = "Auto (Global Max)"
-CLICK_MODE = "Click from Plot"
-MANUAL_MODE = "Manual / Click Hybrid"
-
 # ====================== SESSION STATE ======================
 if "ref_value" not in st.session_state:
     st.session_state["ref_value"] = None
@@ -25,7 +20,7 @@ if "clicked_x" not in st.session_state:
 # ====================== SIDEBAR ======================
 with st.sidebar:
     st.header("📁 Upload Data")
-<<<<<<< HEAD
+
     uploaded_files = st.file_uploader(
         "Upload files",
         type=["csv", "xlsx", "xls"],
@@ -36,11 +31,6 @@ with st.sidebar:
         "Spectra Type",
         ["XPS", "Raman", "FTIR", "UV-Vis", "XRD", "Others"]
     )
-=======
-    uploaded_files = st.file_uploader("Upload CSV/Excel files", 
-                                    type=["csv", "xlsx", "xls"], 
-                                    accept_multiple_files=True)
->>>>>>> 119258a (Improved click on plot for peak selection)
 
     normalization_mode = st.radio(
         "Normalization Mode",
@@ -52,6 +42,7 @@ with st.sidebar:
         ["Auto (Minimum)", "Fixed Value"]
     )
 
+    manual_baseline = 0.0
     if baseline_mode == "Fixed Value":
         manual_baseline = st.number_input("Fixed Baseline", value=0.0)
 
@@ -67,7 +58,7 @@ data_dict = {}
 if uploaded_files:
     for file in uploaded_files:
         try:
-            df = pd.read_csv(file) if file.name.endswith('.csv') else pd.read_excel(file)
+            df = pd.read_csv(file) if file.name.endswith(".csv") else pd.read_excel(file)
 
             numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
             if len(numeric_cols) < 2:
@@ -78,79 +69,70 @@ if uploaded_files:
             for y_col in numeric_cols[1:]:
                 name = f"{file.name} - {y_col}"
                 temp = df[[x_col, y_col]].dropna().copy()
-                temp.columns = ['x', 'y']
+                temp.columns = ["x", "y"]
                 data_dict[name] = temp
 
         except:
             pass
 
-# ====================== REFERENCE SELECTION ======================
-<<<<<<< HEAD
+# ====================== MAIN UI ======================
 if data_dict:
 
-    st.header("🎯 Select Reference Peak")
-=======
-ref_plot = None
-ref_value = None
->>>>>>> 119258a (Improved click on plot for peak selection)
+    st.header("🎯 Reference Peak Selection")
 
     ref_plot = st.selectbox("Select Reference Spectrum", list(data_dict.keys()))
-<<<<<<< HEAD
     ref_df = data_dict[ref_plot]
 
     picker_mode = st.radio(
         "Reference Selection Mode",
-        [AUTO_MODE, CLICK_MODE, MANUAL_MODE]
+        ["Auto (Global Max)", "Click from Plot", "Manual / Click Hybrid"]
     )
 
     # ====================== PLOT ======================
     fig = go.Figure()
 
     fig.add_trace(go.Scatter(
-        x=ref_df['x'],
-        y=ref_df['y'],
-        mode='lines+markers',
+        x=ref_df["x"],
+        y=ref_df["y"],
+        mode="lines+markers",
         name=ref_plot,
         line=dict(width=3),
         marker=dict(size=4)
     ))
 
-    # Show selected peak marker
+    # show selected peak
     if st.session_state["ref_value"] is not None:
         fig.add_trace(go.Scatter(
             x=[st.session_state["clicked_x"]],
             y=[st.session_state["ref_value"]],
-            mode='markers',
-            marker=dict(size=12, color='red'),
-            name='Selected Peak'
+            mode="markers",
+            marker=dict(size=12, color="red"),
+            name="Selected Peak"
         ))
 
-    fig.update_layout(title="Click on Peak", height=500)
+    fig.update_layout(height=500, title="Click on Peak")
 
     clicked_points = plotly_events(fig, click_event=True)
 
-    # ====================== CLICK HANDLING ======================
+    # ====================== CLICK HANDLER ======================
     if clicked_points:
         point = clicked_points[0]
         clicked_x = point["x"]
 
-        # Peak snapping
-        peaks, _ = find_peaks(ref_df['y'].values)
+        peaks, _ = find_peaks(ref_df["y"].values)
 
         if len(peaks) > 0:
-            peak_xs = ref_df['x'].iloc[peaks]
+            peak_xs = ref_df["x"].iloc[peaks]
             closest_peak_idx = np.argmin(np.abs(peak_xs - clicked_x))
             idx = peaks[closest_peak_idx]
         else:
-            idx = np.argmin(np.abs(ref_df['x'] - clicked_x))
+            idx = np.argmin(np.abs(ref_df["x"] - clicked_x))
 
-        ref_value = float(ref_df['y'].iloc[idx])
-
-        st.session_state["ref_value"] = ref_value
-        st.session_state["clicked_x"] = float(ref_df['x'].iloc[idx])
+        st.session_state["ref_value"] = float(ref_df["y"].iloc[idx])
+        st.session_state["clicked_x"] = float(ref_df["x"].iloc[idx])
 
     # ====================== MANUAL INPUT ======================
-    if picker_mode == MANUAL_MODE:
+    if picker_mode == "Manual / Click Hybrid":
 
         manual_input = st.number_input(
             "Reference Value",
@@ -159,47 +141,16 @@ ref_value = None
 
         if manual_input != 0.0:
             st.session_state["ref_value"] = manual_input
-=======
-    
-    method = st.radio("How to choose Reference Value?", 
-                     ["Global Maximum", "Click on Plot to Pick Peak"])
 
-    if method == "Click on Plot to Pick Peak" and ref_plot:
-        st.subheader("Click on any peak in the plot below")
-        
-        ref_df = data_dict[ref_plot]
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(
-            x=ref_df['x'], y=ref_df['y'], 
-            mode='lines+markers',
-            name=ref_plot,
-            line=dict(width=3),
-            marker=dict(size=5)
-        ))
-        fig.update_layout(title="Click on Desired Peak", height=550)
-        
-        click_data = st.plotly_chart(fig, use_container_width=True, key="click_picker")
-
-        # Handle click
-        if click_data and click_data.get("points"):
-            point = click_data["points"][0]
-            clicked_x = point["x"]
-            idx = np.argmin(np.abs(ref_df['x'] - clicked_x))
-            ref_value = float(ref_df['y'].iloc[idx])
-            
-            st.success(f"✅ Peak Selected!  X = {clicked_x:.4f} | Y = {ref_value:.4f}")
-            st.info("You can now see normalized plot below")
->>>>>>> 119258a (Improved click on plot for peak selection)
-
-# ====================== NORMALIZATION & PLOT ======================
+# ====================== NORMALIZATION ======================
 if data_dict:
 
     normalized_data = {}
 
     for name, df in data_dict.items():
 
-        x = df['x'].values
-        y = df['y'].values
+        x = df["x"].values
+        y = df["y"].values
 
         baseline = y.min() if baseline_mode == "Auto (Minimum)" else manual_baseline
         y_base = np.maximum(y - baseline, 0)
@@ -207,82 +158,51 @@ if data_dict:
         if smooth and len(y_base) > window:
             y_base = savgol_filter(y_base, window, poly)
 
-<<<<<<< HEAD
-        # ====================== NORMALIZATION FACTOR ======================
-=======
-        # Normalization logic
->>>>>>> 119258a (Improved click on plot for peak selection)
         if normalization_mode == "Individual Normalization":
-
             norm_factor = y_base.max() or 1.0
 
         else:
-<<<<<<< HEAD
-
-            if picker_mode == AUTO_MODE:
-
-=======
-            if method == "Global Maximum":
->>>>>>> 119258a (Improved click on plot for peak selection)
-                ref_y = data_dict[ref_plot]['y'].values
+            if picker_mode == "Auto (Global Max)":
+                ref_y = data_dict[ref_plot]["y"].values
                 ref_base = ref_y.min() if baseline_mode == "Auto (Minimum)" else manual_baseline
                 norm_factor = (ref_y.max() - ref_base) or 1.0
-
             else:
-
                 ref_value = st.session_state["ref_value"]
 
                 if ref_value is None:
-                    st.warning("⚠️ Please select a peak or enter a value.")
+                    st.warning("⚠️ Select or enter reference peak value")
                     st.stop()
 
                 norm_factor = ref_value
 
         y_norm = y_base / norm_factor if norm_factor > 0 else y_base
 
-<<<<<<< HEAD
         normalized_data[name] = pd.DataFrame({
-            'x': x,
-            'y_normalized': y_norm
+            "x": x,
+            "y_normalized": y_norm
         })
 
     # ====================== FINAL PLOT ======================
-=======
->>>>>>> 119258a (Improved click on plot for peak selection)
-    st.header("📈 Normalized Stacked Spectra")
+    st.header("📈 Normalized Spectra")
 
     fig = go.Figure()
 
-    colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd']
-
     for i, (name, dfn) in enumerate(normalized_data.items()):
         fig.add_trace(go.Scatter(
-<<<<<<< HEAD
-            x=dfn['x'],
-            y=dfn['y_normalized'],
-            mode='lines',
-            name=name,
-=======
-            x=dfn['x'], y=dfn['y_normalized'],
-            mode='lines', name=name,
->>>>>>> 119258a (Improved click on plot for peak selection)
-            line=dict(color=colors[i % len(colors)], width=2.5)
+            x=dfn["x"],
+            y=dfn["y_normalized"],
+            mode="lines",
+            name=name
         ))
 
     fig.update_layout(
-        title=f"Normalized {spectra_type} Spectra",
-        xaxis_title="X Axis",
-        yaxis_title="Normalized Intensity (0 - 1)",
-        hovermode="x unified",
         height=650,
-        legend=dict(orientation="h", y=1.02)
+        hovermode="x unified",
+        xaxis_title="X Axis",
+        yaxis_title="Normalized Intensity"
     )
 
     st.plotly_chart(fig, use_container_width=True)
 
 else:
-<<<<<<< HEAD
-    st.info("📂 Please upload files to begin")
-=======
-    st.info("Please upload your data file(s)")
->>>>>>> 119258a (Improved click on plot for peak selection)
+    st.info("📂 Upload files to start")
