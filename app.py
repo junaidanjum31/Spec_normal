@@ -10,6 +10,11 @@ st.set_page_config(page_title="Spectrum Normalizer Pro", layout="wide")
 st.title("📊 Spectrum Normalizer Pro")
 st.markdown("**Click directly on the plot to select reference peak**")
 
+# ====================== CONSTANTS ======================
+AUTO_MODE = "Auto (Global Max)"
+CLICK_MODE = "Click from Plot"
+MANUAL_MODE = "Manual / Click Hybrid"
+
 # ====================== SESSION STATE ======================
 if "ref_value" not in st.session_state:
     st.session_state["ref_value"] = None
@@ -83,7 +88,7 @@ if data_dict:
 
     picker_mode = st.radio(
         "Reference Selection Mode",
-        ["Auto (Global Max)", "Click from Plot", "Manual / Click Hybrid"]
+        [AUTO_MODE, CLICK_MODE, MANUAL_MODE]
     )
 
     # ====================== PLOT ======================
@@ -133,7 +138,7 @@ if data_dict:
         st.session_state["clicked_x"] = float(ref_df['x'].iloc[idx])
 
     # ====================== MANUAL INPUT ======================
-    if picker_mode == "Manual / Click Hybrid":
+    if picker_mode == MANUAL_MODE:
 
         manual_input = st.number_input(
             "Reference Value",
@@ -166,7 +171,7 @@ if data_dict:
 
         else:
 
-            if picker_mode == "Auto (Global Max"):
+            if picker_mode == AUTO_MODE:
 
                 ref_y = data_dict[ref_plot]['y'].values
                 ref_base = ref_y.min() if baseline_mode == "Auto (Minimum)" else manual_baseline
