@@ -12,7 +12,7 @@ st.markdown("**Click on Plot to Select Reference Peak**")
 # ====================== SIDEBAR ======================
 with st.sidebar:
     st.header("📁 Upload Data")
-    uploaded_files = st.file_uploader("Upload files", 
+    uploaded_files = st.file_uploader("Upload CSV/Excel files", 
                                     type=["csv", "xlsx", "xls"], 
                                     accept_multiple_files=True)
 
@@ -48,37 +48,43 @@ if uploaded_files:
         except:
             pass
 
-# ====================== REFERENCE PICKER ======================
+# ====================== REFERENCE SELECTION ======================
 ref_plot = None
 ref_value = None
 
 if normalization_mode == "Stack & Normalize Together" and data_dict:
     ref_plot = st.selectbox("Select Reference Spectrum", list(data_dict.keys()))
     
-    picker_mode = st.radio("Reference Value Select کرنے کا طریقہ", 
-                         ["Global Maximum", "Click on Plot to Pick Peak"])
+    method = st.radio("How to choose Reference Value?", 
+                     ["Global Maximum", "Click on Plot to Pick Peak"])
 
-    if picker_mode == "Click on Plot to Pick Peak" and ref_plot:
-        st.info("**نیچے والے گراف پر جس پیک پر کلک کریں گے، وہ ریفرنس بن جائے گا**")
+    if method == "Click on Plot to Pick Peak" and ref_plot:
+        st.subheader("Click on any peak in the plot below")
         
         ref_df = data_dict[ref_plot]
         fig = go.Figure()
-        fig.add_trace(go.Scatter(x=ref_df['x'], y=ref_df['y'], mode='lines+markers',
-                               name=ref_plot, line=dict(width=3), marker=dict(size=4)))
-        fig.update_layout(title="Click on any Peak", height=500)
+        fig.add_trace(go.Scatter(
+            x=ref_df['x'], y=ref_df['y'], 
+            mode='lines+markers',
+            name=ref_plot,
+            line=dict(width=3),
+            marker=dict(size=5)
+        ))
+        fig.update_layout(title="Click on Desired Peak", height=550)
         
-        clicked = st.plotly_chart(fig, use_container_width=True, key="picker")
+        click_data = st.plotly_chart(fig, use_container_width=True, key="click_picker")
 
-        # Click handling
-        if clicked and "points" in clicked and len(clicked["points"]) > 0:
-            point = clicked["points"][0]
+        # Handle click
+        if click_data and click_data.get("points"):
+            point = click_data["points"][0]
             clicked_x = point["x"]
             idx = np.argmin(np.abs(ref_df['x'] - clicked_x))
             ref_value = float(ref_df['y'].iloc[idx])
-            st.success(f"✅ Peak Selected Successfully!\nX = {clicked_x:.4f} | Y = {ref_value:.4f}")
-            st.rerun()
+            
+            st.success(f"✅ Peak Selected!  X = {clicked_x:.4f} | Y = {ref_value:.4f}")
+            st.info("You can now see normalized plot below")
 
-# ====================== NORMALIZATION ======================
+# ====================== NORMALIZATION & PLOT ======================
 if data_dict:
     normalized_data = {}
 
@@ -92,10 +98,11 @@ if data_dict:
         if smooth and len(y_base) > window:
             y_base = savgol_filter(y_base, window, poly)
 
+        # Normalization logic
         if normalization_mode == "Individual Normalization":
             norm_factor = y_base.max() or 1.0
         else:
-            if picker_mode == "Global Maximum":
+            if method == "Global Maximum":
                 ref_y = data_dict[ref_plot]['y'].values
                 ref_base = ref_y.min() if baseline_mode == "Auto (Minimum)" else manual_baseline
                 norm_factor = (ref_y.max() - ref_base) or 1.0
@@ -105,15 +112,16 @@ if data_dict:
         y_norm = y_base / norm_factor if norm_factor > 0 else y_base
         normalized_data[name] = pd.DataFrame({'x': x, 'y_normalized': y_norm})
 
-    # Final Plot
     st.header("📈 Normalized Stacked Spectra")
     fig = go.Figure()
     colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd']
 
     for i, (name, dfn) in enumerate(normalized_data.items()):
-        fig.add_trace(go.Scatter(x=dfn['x'], y=dfn['y_normalized'],
-                               mode='lines', name=name,
-                               line=dict(color=colors[i % len(colors)], width=2.5)))
+        fig.add_trace(go.Scatter(
+            x=dfn['x'], y=dfn['y_normalized'],
+            mode='lines', name=name,
+            line=dict(color=colors[i % len(colors)], width=2.5)
+        ))
 
     fig.update_layout(
         title=f"Normalized {spectra_type} Spectra",
@@ -127,4 +135,5 @@ if data_dict:
     st.plotly_chart(fig, use_container_width=True)
 
 else:
-    st.info("فائل اپ لوڈ کریں")
+    st.info("Please upload your data file(s)")
+    
