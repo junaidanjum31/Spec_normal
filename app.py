@@ -3,18 +3,11 @@ import pandas as pd
 import plotly.graph_objects as go
 import numpy as np
 from scipy.signal import savgol_filter
-from streamlit_plotly_events import plotly_events
 
 st.set_page_config(page_title="Spectrum Normalizer Pro", layout="wide")
 
 st.title("📊 Spectrum Normalizer Pro")
-st.markdown("**Click directly on the plot to select reference peak**")
-
-# Session State
-if "ref_value" not in st.session_state:
-    st.session_state.ref_value = None
-if "clicked_x" not in st.session_state:
-    st.session_state.clicked_x = None
+st.markdown("**Reference Peak Selection**")
 
 # ====================== SIDEBAR ======================
 with st.sidebar:
@@ -54,35 +47,29 @@ if uploaded_files:
             pass
 
 if not data_dict:
-    st.info("👆 Upload your files to begin")
+    st.info("👆 Upload your file(s) to begin")
     st.stop()
 
 # ====================== REFERENCE SELECTION ======================
-st.subheader("🎯 Click on Plot to Select Reference Peak")
+st.subheader("🎯 Reference Selection")
 
 ref_plot = st.selectbox("Select Reference Spectrum", list(data_dict.keys()))
 ref_df = data_dict[ref_plot]
 
-# Plot for clicking
-fig = go.Figure()
-fig.add_trace(go.Scatter(
-    x=ref_df["x"], 
-    y=ref_df["y"], 
-    mode="lines+markers",
-    name=ref_plot,
-    line=dict(width=3),
-    marker=dict(size=6)
-))
-fig.update_layout(title="Click on any peak in this plot to set it as reference", height=550)
+ref_method = st.radio("How to choose reference value?", 
+                     ["Global Maximum", "Manual Value"])
 
-clicked = plotly_events(fig, click_event=True, override_width="100%")
+if ref_method == "Manual Value":
+    ref_value = st.number_input("Enter Reference Value (or click on plot if available)", value=1.0)
+else:
+    ref_value = None
 
-if clicked:
-    cx = clicked[0]["x"]
-    idx = np.argmin(np.abs(ref_df["x"] - cx))
-    st.session_state.clicked_x = float(ref_df["x"].iloc[idx])
-    st.session_state.ref_value = float(ref_df["y"].iloc[idx])
-    st.success(f"✅ Peak Selected → X = {st.session_state.clicked_x:.4f} | Y = {st.session_state.ref_value:.4f}")
+# Show Reference Plot
+st.subheader("Reference Spectrum Plot")
+fig_ref = go.Figure()
+fig_ref.add_trace(go.Scatter(x=ref_df["x"], y=ref_df["y"], mode="lines", name=ref_plot))
+fig_ref.update_layout(height=500, title="Reference Spectrum")
+st.plotly_chart(fig_ref, use_container_width=True)
 
 # ====================== NORMALIZATION ======================
 normalized_data = {}
@@ -99,24 +86,34 @@ for name, df in data_dict.items():
     if normalization_mode == "Individual Normalization":
         norm_factor = y_base.max() or 1.0
     else:
-        if st.session_state.ref_value is None:
-            st.warning("Please click on a peak in the plot above first")
-            st.stop()
-        norm_factor = st.session_state.ref_value
+        if ref_method == "Global Maximum":
+            ref_y = ref_df["y"].values
+            ref_base = ref_y.min() if baseline_mode == "Auto (Minimum)" else manual_baseline
+            norm_factor = (ref_y.max() - ref_base) or 1.0
+        else:
+            norm_factor = ref_value
 
     y_norm = y_base / norm_factor if norm_factor > 0 else y_base
     normalized_data[name] = pd.DataFrame({"x": x, "y_normalized": y_norm})
 
 # ====================== FINAL PLOT ======================
 st.header("📈 Normalized Stacked Spectra")
-fig_final = go.Figure()
-for i, (name, dfn) in enumerate(normalized_data.items()):
-    fig_final.add_trace(go.Scatter(x=dfn["x"], y=dfn["y_normalized"], name=name))
+fig = go.Figure()
+for name, dfn in normalized_data.items():
+    fig.add_trace(go.Scatter(x=dfn["x"], y=dfn["y_normalized"], name=name))
 
-fig_final.update_layout(
+fig.update_layout(
     height=650,
     hovermode="x unified",
     xaxis_title="X Axis",
     yaxis_title="Normalized Intensity (0 - 1)"
 )
-st.plotly_chart(fig_final, use_container_width=True)
+st.plotly_chart(fig, use_container_width=True)
+
+# Download
+if normalized_data:
+    export_df = pd.DataFrame({"x": next(iter(normalized_data.values()))["x"]})
+    for name, ndf in normalized_data.items():
+        export_df[name] = ndf["y_normalized"]
+    csv = export_df.to_csv(index=False).encode('utf-8')
+    st.download_button("Download Normalized Data", csv, "normalized_spectra.csv", "text/csv")
