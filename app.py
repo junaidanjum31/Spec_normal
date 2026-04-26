@@ -7,13 +7,13 @@ from scipy.signal import find_peaks, savgol_filter
 st.set_page_config(page_title="Spectrum Normalizer Pro", layout="wide")
 
 st.title("📊 Spectrum Normalizer Pro")
-st.markdown("**Multi-column files + Stacking with Reference Normalization**")
+st.markdown("**Multi-column files • Stacking • Reference Normalization**")
 
 # ====================== SIDEBAR ======================
 with st.sidebar:
     st.header("📁 Upload Data")
     uploaded_files = st.file_uploader(
-        "Upload CSV or Excel files (supports multi-column files)",
+        "Upload CSV or Excel files (multi-column supported)",
         type=["csv", "xlsx", "xls"],
         accept_multiple_files=True
     )
@@ -36,7 +36,7 @@ with st.sidebar:
     detect_peaks = st.checkbox("Enable Peak Detection", True)
 
 # ====================== LOAD MULTI-COLUMN DATA ======================
-data_dict = {}   # key = "filename - ColumnName"
+data_dict = {}  # key = "filename - ColumnName"
 
 if uploaded_files:
     for file in uploaded_files:
@@ -48,11 +48,10 @@ if uploaded_files:
             
             numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
             if len(numeric_cols) < 2:
-                st.warning(f"Skipping {file.name} - needs at least 2 numeric columns")
                 continue
 
-            x_col = numeric_cols[0]   # First column = X
-            y_cols = numeric_cols[1:] # All other columns = separate spectra
+            x_col = numeric_cols[0]
+            y_cols = numeric_cols[1:]
 
             for y_col in y_cols:
                 plot_name = f"{file.name} - {y_col}"
@@ -60,18 +59,18 @@ if uploaded_files:
                 temp_df.columns = ['x', 'y']
                 data_dict[plot_name] = temp_df
         except Exception as e:
-            st.error(f"Error reading {file.name}: {e}")
+            st.error(f"Error with {file.name}: {e}")
 
-# ====================== REFERENCE SELECTION ======================
+# ====================== REFERENCE SELECTION (NOW MORE RELIABLE) ======================
 ref_plot = None
-if data_dict and normalization_mode == "Stack & Normalize Together" and len(data_dict) > 1:
+if normalization_mode == "Stack & Normalize Together" and len(data_dict) > 1:
     ref_plot = st.selectbox(
         "🔑 Select Reference Plot/Column (its max will normalize all others)",
         list(data_dict.keys()),
         index=0
     )
 
-# ====================== PROCESSING & PLOTTING ======================
+# ====================== PROCESSING ======================
 if data_dict:
     normalized_data = {}
 
@@ -79,11 +78,9 @@ if data_dict:
         x = df['x'].values
         y = df['y'].values
 
-        # Baseline
         baseline = y.min() if baseline_mode == "Auto (Minimum)" else manual_baseline
         y_base = np.maximum(y - baseline, 0)
 
-        # Smoothing
         if smooth and len(y_base) > window:
             y_base = savgol_filter(y_base, window, poly)
 
@@ -127,4 +124,4 @@ if data_dict:
     st.plotly_chart(fig, use_container_width=True)
 
 else:
-    st.info("👆 Upload your file(s) to begin")
+    st.info("👆 Upload your file to see all columns as separate plots")
