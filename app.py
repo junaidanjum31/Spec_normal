@@ -4,7 +4,6 @@ import plotly.graph_objects as go
 import numpy as np
 from scipy.signal import find_peaks, savgol_filter
 import os
-
 st.set_page_config(page_title="Spectrum Normalizer Pro", layout="wide")
 
 # ================== THEME ==================
